@@ -59,6 +59,9 @@ export const qqPersonalPlugin: ChannelPlugin<ResolvedQQPersonalAccount> = {
       const abortSignal = (ctx as any).abortSignal as AbortSignal
 
       log?.info(`[qq-personal] Starting — wsUrl=${account.wsUrl}`)
+      if (account.groupPolicy === 'open') {
+        log?.warn('[qq-personal] groupPolicy: "open" is not yet implemented — using "at-only" behavior')
+      }
 
       const client = new OneBotClient({
         wsUrl: account.wsUrl,
