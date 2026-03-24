@@ -1,0 +1,11 @@
+{
+  "id": "qq-personal",
+  "name": "QQ Personal",
+  "description": "Personal QQ account channel via NapCatQQ (OneBot v11)",
+  "channels": ["qq-personal"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
