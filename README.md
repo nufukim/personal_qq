@@ -12,7 +12,7 @@
 ```bash
 # In your OpenClaw extensions directory
 cd ~/.openclaw/extensions
-git clone git@github.com:nufukim/personal_qq.git qq-personal
+git clone <repo-url> qq-personal
 npm install --prefix qq-personal
 ```
 
@@ -78,7 +78,7 @@ Limit how many messages each user can send per day. Users in `allowFrom` bypass 
 
 ```json
 "rateLimitPerUserPerDay": 20,
-"allowFrom": ["3098340041"]
+"allowFrom": ["1234567890"]
 ```
 
 ### Super Admin System Prompt
@@ -88,7 +88,7 @@ A designated QQ account can dynamically set a global system prompt that affects 
 **Setup:** set `superAdmin` to a QQ number:
 
 ```json
-"superAdmin": "3098340041"
+"superAdmin": "1234567890"
 ```
 
 **Commands** (send in private chat, or @bot in a group):

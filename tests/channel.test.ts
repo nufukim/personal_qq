@@ -204,10 +204,10 @@ describe('qqPersonalPlugin.gateway.startAccount', () => {
   })
 
   it('allows whitelisted sender and dispatches normally', async () => {
-    await startAccount(controller, { allowFrom: ['3098340041'] })
+    await startAccount(controller, { allowFrom: ['10000'] })
     mockClientInstance.emit('event', {
       post_type: 'message', message_type: 'private',
-      self_id: 12345, user_id: 3098340041, time: 1,
+      self_id: 12345, user_id: 10000, time: 1,
       message: [{ type: 'text', data: { text: 'hello' } }],
     })
     await new Promise(r => setTimeout(r, 50))
@@ -215,11 +215,11 @@ describe('qqPersonalPlugin.gateway.startAccount', () => {
   })
 
   it('whitelisted sender bypasses daily rate limit', async () => {
-    await startAccount(controller, { allowFrom: ['3098340041'], rateLimitPerUserPerDay: 1 })
+    await startAccount(controller, { allowFrom: ['10000'], rateLimitPerUserPerDay: 1 })
 
     const event = {
       post_type: 'message', message_type: 'private',
-      self_id: 12345, user_id: 3098340041, time: 1,
+      self_id: 12345, user_id: 10000, time: 1,
       message: [{ type: 'text', data: { text: 'msg' } }],
     }
     // Send 2 messages — limit is 1, but whitelisted users bypass it entirely
@@ -232,7 +232,7 @@ describe('qqPersonalPlugin.gateway.startAccount', () => {
   })
 
   it('non-whitelisted sender IS subject to daily rate limit', async () => {
-    await startAccount(controller, { allowFrom: ['3098340041'], rateLimitPerUserPerDay: 1 })
+    await startAccount(controller, { allowFrom: ['10000'], rateLimitPerUserPerDay: 1 })
 
     const event = {
       post_type: 'message', message_type: 'private',
@@ -256,7 +256,7 @@ describe('qqPersonalPlugin.gateway.startAccount', () => {
   })
 
   it('non-whitelisted sender can interact up to the limit (not silently dropped)', async () => {
-    await startAccount(controller, { allowFrom: ['3098340041'], rateLimitPerUserPerDay: 5 })
+    await startAccount(controller, { allowFrom: ['10000'], rateLimitPerUserPerDay: 5 })
     mockClientInstance.emit('event', {
       post_type: 'message', message_type: 'private',
       self_id: 12345, user_id: 77777, time: 1,
