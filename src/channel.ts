@@ -128,9 +128,11 @@ export const qqPersonalPlugin: ChannelPlugin<ResolvedQQPersonalAccount> = {
             direction: 'inbound',
           })
 
-          // 白名单豁免检查：在白名单内的发送者不受每日限额约束
+          // 白名单豁免检查：在白名单内的发送者，以及超级管理员，不受每日限额约束
           const isWhitelisted =
-            account.allowFrom.includes('*') || account.allowFrom.includes(inbound.senderId)
+            account.allowFrom.includes('*') ||
+            account.allowFrom.includes(inbound.senderId) ||
+            (account.superAdmin !== '' && inbound.senderId === account.superAdmin)
 
           // 每用户每日限额检查（仅对非白名单用户生效）
           if (!isWhitelisted) {

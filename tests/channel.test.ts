@@ -283,6 +283,22 @@ describe('qqPersonalPlugin.gateway.startAccount', () => {
     expect(mockRuntime.channel.reply.dispatchReplyWithBufferedBlockDispatcher).toHaveBeenCalled()
   })
 
+  it('superAdmin bypasses rate limit automatically (without being in allowFrom)', async () => {
+    await startAccount(controller, { superAdmin: '99999', rateLimitPerUserPerDay: 1, allowFrom: [] })
+
+    const event = {
+      post_type: 'message', message_type: 'private',
+      self_id: 12345, user_id: 99999, time: 1,
+      message: [{ type: 'text', data: { text: 'hello' } }],
+    }
+    mockClientInstance.emit('event', event)
+    await new Promise(r => setTimeout(r, 50))
+    mockClientInstance.emit('event', event)
+    await new Promise(r => setTimeout(r, 50))
+    // Both messages must be dispatched — superAdmin is implicitly whitelisted
+    expect(mockRuntime.channel.reply.dispatchReplyWithBufferedBlockDispatcher).toHaveBeenCalledTimes(2)
+  })
+
   it('non-admin sending 小V hello is treated as normal conversation', async () => {
     await startAccount(controller, { superAdmin: '11111' })
     mockClientInstance.emit('event', {
@@ -415,23 +431,20 @@ describe('qqPersonalPlugin.gateway.startAccount', () => {
     )
   })
 
-  it('admin command bypasses rate limit', async () => {
+  it('admin command works even when other users are rate-limited', async () => {
     await startAccount(controller, { superAdmin: '99999', rateLimitPerUserPerDay: 1, allowFrom: [] })
-    const helloEvent = {
+    const otherUserEvent = {
       post_type: 'message', message_type: 'private',
-      self_id: 12345, user_id: 99999, time: 1,
+      self_id: 12345, user_id: 77777, time: 1,
       message: [{ type: 'text', data: { text: 'hello' } }],
     }
-    // 1通目: 正常処理、レート制限消費
-    mockClientInstance.emit('event', helloEvent)
+    // 普通用户耗尽限额
+    mockClientInstance.emit('event', otherUserEvent)
+    await new Promise(r => setTimeout(r, 50))
+    mockClientInstance.emit('event', otherUserEvent)
     await new Promise(r => setTimeout(r, 50))
     vi.clearAllMocks()
-    // 2通目: レート制限に引っかかる
-    mockClientInstance.emit('event', helloEvent)
-    await new Promise(r => setTimeout(r, 50))
-    expect(mockRuntime.channel.reply.dispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled()
-    vi.clearAllMocks()
-    // 管理者コマンド: レート制限をバイパスして実行されるはず
+    // admin 发送指令，应正常执行
     mockClientInstance.emit('event', {
       post_type: 'message', message_type: 'private',
       self_id: 12345, user_id: 99999, time: 1,
