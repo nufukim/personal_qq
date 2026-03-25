@@ -52,6 +52,10 @@ export interface QQPersonalConfig {
   accessToken?: string
   groupPolicy?: 'at-only' | 'open'
   groupReplyAt?: boolean
+  rateLimitPerUserPerDay?: number
+  rateLimitMessage?: string
+  allowFrom?: string[]
+  superAdmin?: string
 }
 
 // 框架解析后的账号对象（由 config.resolveAccount 返回）
@@ -62,5 +66,9 @@ export interface ResolvedQQPersonalAccount {
   accessToken: string
   groupPolicy: 'at-only' | 'open'
   groupReplyAt: boolean
+  rateLimitPerUserPerDay: number
+  rateLimitMessage: string
+  allowFrom: string[]
+  superAdmin: string
   config?: QQPersonalConfig
 }
