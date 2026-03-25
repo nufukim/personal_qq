@@ -363,11 +363,11 @@ describe('qqPersonalPlugin.gateway.startAccount', () => {
     await new Promise(r => setTimeout(r, 50))
     expect(mockRuntime.channel.reply.dispatchReplyWithBufferedBlockDispatcher).toHaveBeenCalled()
     expect(mockRuntime.channel.reply.finalizeInboundContext).toHaveBeenCalledWith(
-      expect.objectContaining({ BodyForAgent: '小V hello' })
+      expect.objectContaining({ BodyForAgent: '小V hello', GroupSystemPrompt: undefined })
     )
   })
 
-  it('injects system prompt into BodyForAgent when prompt is set', async () => {
+  it('injects system prompt into GroupSystemPrompt when prompt is set', async () => {
     setSystemPrompt('你是Python助手')
     await startAccount(controller)
     mockClientInstance.emit('event', {
@@ -378,7 +378,8 @@ describe('qqPersonalPlugin.gateway.startAccount', () => {
     await new Promise(r => setTimeout(r, 50))
     expect(mockRuntime.channel.reply.finalizeInboundContext).toHaveBeenCalledWith(
       expect.objectContaining({
-        BodyForAgent: '[系统指令]\n你是Python助手\n---\nhello',
+        BodyForAgent: 'hello',
+        GroupSystemPrompt: '你是Python助手',
       })
     )
   })
@@ -394,7 +395,7 @@ describe('qqPersonalPlugin.gateway.startAccount', () => {
     })
     await new Promise(r => setTimeout(r, 50))
     expect(mockRuntime.channel.reply.finalizeInboundContext).toHaveBeenCalledWith(
-      expect.objectContaining({ BodyForAgent: 'hello' })
+      expect.objectContaining({ BodyForAgent: 'hello', GroupSystemPrompt: undefined })
     )
   })
 
@@ -409,7 +410,7 @@ describe('qqPersonalPlugin.gateway.startAccount', () => {
     await new Promise(r => setTimeout(r, 50))
     expect(mockRuntime.channel.reply.finalizeInboundContext).toHaveBeenCalledWith(
       expect.objectContaining({
-        BodyForAgent: expect.stringContaining('[系统指令]'),
+        GroupSystemPrompt: 'foo',
       })
     )
   })

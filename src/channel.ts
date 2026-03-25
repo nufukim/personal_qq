@@ -169,15 +169,13 @@ export const qqPersonalPlugin: ChannelPlugin<ResolvedQQPersonalAccount> = {
           })
 
           const systemPrompt = getSystemPrompt()
-          const bodyForAgent = systemPrompt
-            ? `[系统指令]\n${systemPrompt}\n---\n${inbound.text}`
-            : inbound.text
 
           const ctxPayload = rt.reply.finalizeInboundContext({
             Body: body,
-            BodyForAgent: bodyForAgent,
+            BodyForAgent: inbound.text,
             RawBody: inbound.text,
             CommandBody: inbound.text,
+            GroupSystemPrompt: systemPrompt ?? undefined,
             From: `qq-personal:${inbound.type}:${inbound.senderId}`,
             To: `qq-personal:${inbound.type}:${inbound.peerId}`,
             SessionKey: route?.sessionKey,
