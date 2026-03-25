@@ -4,6 +4,7 @@ import { OneBotClient } from './onebot-client.js'
 import { toOpenClaw, toOneBot } from './message-adapter.js'
 import { getQQPersonalRuntime } from './runtime.js'
 import { DailyRateLimiter } from './rate-limiter.js'
+import { setSystemPrompt, clearSystemPrompt, getSystemPrompt } from './system-prompt-store.js'
 
 const DEFAULT_ACCOUNT_ID = 'default'
 const DEFAULT_RATE_LIMIT_MESSAGE = '今日对话次数已达上限，请明天再试'
@@ -94,6 +95,32 @@ export const qqPersonalPlugin: ChannelPlugin<ResolvedQQPersonalAccount> = {
         const inbound = toOpenClaw(event, botId)
         if (!inbound) return
 
+        // 超级管理员指令检查（在限流检查之前）
+        if (account.superAdmin !== '' && inbound.senderId === account.superAdmin && inbound.text.startsWith('小V ')) {
+          const content = inbound.text.slice('小V '.length).trim()
+          let confirmationText: string
+          if (content === '清除') {
+            clearSystemPrompt()
+            confirmationText = '✅ 系统提示已清除'
+          } else if (content === '') {
+            confirmationText = '⚠️ 请在"小V"后输入指令内容'
+          } else {
+            setSystemPrompt(content)
+            confirmationText = '✅ 系统提示已设置'
+          }
+          try {
+            await client.send(toOneBot(confirmationText, {
+              type: inbound.type,
+              peerId: inbound.peerId,
+              senderId: inbound.senderId,
+              groupReplyAt: account.groupReplyAt,
+            }))
+          } catch (err) {
+            log?.error(`[qq-personal] Failed to send admin command reply: ${err}`)
+          }
+          return
+        }
+
         try {
           rt.activity.record({
             channel: 'qq-personal',
@@ -141,9 +168,14 @@ export const qqPersonalPlugin: ChannelPlugin<ResolvedQQPersonalAccount> = {
             channel: 'qq-personal',
           })
 
+          const systemPrompt = getSystemPrompt()
+          const bodyForAgent = systemPrompt
+            ? `[系统指令]\n${systemPrompt}\n---\n${inbound.text}`
+            : inbound.text
+
           const ctxPayload = rt.reply.finalizeInboundContext({
             Body: body,
-            BodyForAgent: inbound.text,
+            BodyForAgent: bodyForAgent,
             RawBody: inbound.text,
             CommandBody: inbound.text,
             From: `qq-personal:${inbound.type}:${inbound.senderId}`,

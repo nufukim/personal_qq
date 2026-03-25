@@ -20,7 +20,7 @@ function extractText(segments: MessageSegment[], botId: string): string {
     .map(s => s.type === 'text' ? (s.data as { text: string }).text : '')
     .join('')
     .replace(/  +/g, ' ')
-    .trim()
+    .trimStart()
 }
 
 export function toOpenClaw(event: OneBotEvent, botId: string): InboundMessage | null {
