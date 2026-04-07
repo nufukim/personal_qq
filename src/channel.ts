@@ -1,10 +1,79 @@
 import type { ChannelPlugin, OpenClawConfig } from 'openclaw/plugin-sdk'
-import type { ResolvedQQPersonalAccount } from './types.js'
+import type { ResolvedQQPersonalAccount, OneBotAction } from './types.js'
 import { OneBotClient } from './onebot-client.js'
 import { toOpenClaw, toOneBot } from './message-adapter.js'
 import { getQQPersonalRuntime } from './runtime.js'
 import { DailyRateLimiter } from './rate-limiter.js'
+import { MessageQueue } from './message-queue.js'
 import { setSystemPrompt, clearSystemPrompt, getSystemPrompt } from './system-prompt-store.js'
+import { stripMarkdown } from './markdown.js'
+import { writeFile, mkdir } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { join } from 'node:path'
+import { homedir } from 'node:os'
+
+const MEDIA_DIR = join(homedir(), '.openclaw', 'media', 'inbound')
+const MAX_MSG_LEN = 2000
+const TTS_URL = 'http://127.0.0.1:8800/tts'
+
+function chunkText(text: string, limit: number): string[] {
+  if (text.length <= limit) return [text]
+  const chunks: string[] = []
+  let remaining = text
+  while (remaining.length > 0) {
+    if (remaining.length <= limit) {
+      chunks.push(remaining)
+      break
+    }
+    let cut = remaining.lastIndexOf('\n', limit)
+    if (cut <= 0) cut = remaining.lastIndexOf(' ', limit)
+    if (cut <= 0) cut = limit
+    chunks.push(remaining.slice(0, cut))
+    remaining = remaining.slice(cut).replace(/^\n/, '')
+  }
+  return chunks
+}
+
+async function downloadImage(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return null
+    const buf = Buffer.from(await res.arrayBuffer())
+    await mkdir(MEDIA_DIR, { recursive: true })
+    // 根据 content-type 判断扩展名，QQ 图片大多为 JPEG
+    const ct = res.headers.get('content-type') || ''
+    const ext = ct.includes('png') ? '.png' : '.jpg'
+    const filePath = join(MEDIA_DIR, `${randomUUID()}${ext}`)
+    await writeFile(filePath, buf)
+    return filePath
+  } catch {
+    return null
+  }
+}
+
+/** 调用 TTS 服务生成语音，返回 base64 编码的 WAV，失败返回 null */
+async function textToVoice(text: string): Promise<string | null> {
+  try {
+    const res = await fetch(TTS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    })
+    if (!res.ok) return null
+    const buf = Buffer.from(await res.arrayBuffer())
+    return buf.toString('base64')
+  } catch {
+    return null
+  }
+}
+
+function toOneBotVoice(base64Audio: string, context: { type: 'private' | 'group'; peerId: string }): OneBotAction {
+  const message = [{ type: 'record', data: { file: `base64://${base64Audio}` } }]
+  if (context.type === 'private') {
+    return { action: 'send_private_msg', params: { user_id: Number(context.peerId), message } }
+  }
+  return { action: 'send_group_msg', params: { group_id: Number(context.peerId), message } }
+}
 
 const DEFAULT_ACCOUNT_ID = 'default'
 const DEFAULT_RATE_LIMIT_MESSAGE = '今日对话次数已达上限，请明天再试'
@@ -40,7 +109,7 @@ export const qqPersonalPlugin: ChannelPlugin<ResolvedQQPersonalAccount> = {
 
   capabilities: {
     chatTypes: ['direct', 'group'],
-    media: false,
+    media: true,
     reactions: false,
     threads: false,
     blockStreaming: false,
@@ -72,6 +141,7 @@ export const qqPersonalPlugin: ChannelPlugin<ResolvedQQPersonalAccount> = {
       }
 
       const rateLimiter = new DailyRateLimiter(account.rateLimitPerUserPerDay)
+      const messageQueue = new MessageQueue({ perUserLimit: 5, globalLimit: 100, log })
 
       const client = new OneBotClient({
         wsUrl: account.wsUrl,
@@ -121,6 +191,12 @@ export const qqPersonalPlugin: ChannelPlugin<ResolvedQQPersonalAccount> = {
           return
         }
 
+        // 用户维度的消息队列键：私聊用 senderId，群聊用 群号:发送者
+        const queueKey = inbound.type === 'group'
+          ? `${inbound.peerId}:${inbound.senderId}`
+          : inbound.senderId
+
+        messageQueue.enqueue(queueKey, inbound, async (msg) => {
         try {
           rt.activity.record({
             channel: 'qq-personal',
@@ -172,9 +248,27 @@ export const qqPersonalPlugin: ChannelPlugin<ResolvedQQPersonalAccount> = {
 
           const systemPrompt = getSystemPrompt()
 
+          // 检测"语音回答"前缀并剥离
+          const wantsVoice = inbound.text.startsWith('语音回答')
+          const agentText = wantsVoice ? inbound.text.slice('语音回答'.length).trimStart() : inbound.text
+
+          // 下载图片到本地，通过 MediaPaths 传给 agent
+          let mediaPaths: string[] = []
+          if (inbound.imageUrls.length > 0) {
+            const results = await Promise.all(inbound.imageUrls.map(downloadImage))
+            mediaPaths = results.filter((p): p is string => p !== null)
+            if (mediaPaths.length > 0) {
+              log?.info(`[qq-personal] Downloaded ${mediaPaths.length} image(s): ${mediaPaths.join(', ')}`)
+            }
+          }
+
+          const bodyForAgent = mediaPaths.length > 0
+            ? (agentText || '(用户发送了图片)') + '\n' + mediaPaths.map((p, i) => `[media attached ${i + 1}/${mediaPaths.length}: ${p}]`).join('\n')
+            : agentText
+
           const ctxPayload = rt.reply.finalizeInboundContext({
             Body: body,
-            BodyForAgent: inbound.text,
+            BodyForAgent: bodyForAgent,
             RawBody: inbound.text,
             CommandBody: inbound.text,
             GroupSystemPrompt: systemPrompt ?? undefined,
@@ -187,6 +281,10 @@ export const qqPersonalPlugin: ChannelPlugin<ResolvedQQPersonalAccount> = {
             Provider: 'qq-personal',
             Surface: 'qq-personal',
             OriginatingChannel: 'qq-personal',
+            ...(mediaPaths.length > 0 && {
+              MediaPaths: mediaPaths,
+              MediaTypes: mediaPaths.map(() => 'image/jpeg'),
+            }),
           })
 
           await rt.reply.dispatchReplyWithBufferedBlockDispatcher({
@@ -194,19 +292,42 @@ export const qqPersonalPlugin: ChannelPlugin<ResolvedQQPersonalAccount> = {
             cfg,
             dispatcherOptions: {
               deliver: async (payload: any, _info: any) => {
-                const text = (payload.text as string | undefined) ?? ''
-                if (!text) return
-                const action = toOneBot(text, {
-                  type: inbound.type,
-                  peerId: inbound.peerId,
-                  senderId: inbound.senderId,
-                  groupReplyAt: account.groupReplyAt,
-                })
-                try {
-                  log?.info(`[qq-personal] SEND ACTION: ${JSON.stringify(action)}`)
-                  await client.send(action)
-                } catch (err) {
-                  log?.error(`[qq-personal] Failed to send reply: ${err}`)
+                const raw = (payload.text as string | undefined) ?? ''
+                if (!raw) return
+                const text = stripMarkdown(raw)
+
+                // 发送文字消息
+                const chunks = chunkText(text, MAX_MSG_LEN)
+                for (const chunk of chunks) {
+                  const action = toOneBot(chunk, {
+                    type: inbound.type,
+                    peerId: inbound.peerId,
+                    senderId: inbound.senderId,
+                    groupReplyAt: account.groupReplyAt,
+                  })
+                  try {
+                    log?.info(`[qq-personal] SEND ACTION: ${JSON.stringify(action)}`)
+                    await client.send(action)
+                  } catch (err) {
+                    log?.error(`[qq-personal] Failed to send reply: ${err}`)
+                  }
+                }
+
+                // 用户消息以"语音回答"开头时，额外发送语音
+                if (wantsVoice) {
+                  textToVoice(text).then(async (voiceBase64) => {
+                    if (!voiceBase64) return
+                    const voiceAction = toOneBotVoice(voiceBase64, {
+                      type: inbound.type,
+                      peerId: inbound.peerId,
+                    })
+                    try {
+                      log?.info(`[qq-personal] SEND VOICE to ${inbound.peerId}`)
+                      await client.send(voiceAction)
+                    } catch (err) {
+                      log?.error(`[qq-personal] Failed to send voice: ${err}`)
+                    }
+                  }).catch(() => {})
                 }
               },
             },
@@ -214,6 +335,7 @@ export const qqPersonalPlugin: ChannelPlugin<ResolvedQQPersonalAccount> = {
         } catch (err) {
           log?.error(`[qq-personal] Error handling message: ${err}`)
         }
+        })
       })
 
       await client.connect(abortSignal)

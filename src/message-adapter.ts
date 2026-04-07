@@ -5,6 +5,7 @@ export interface InboundMessage {
   peerId: string    // 私聊为对方 QQ 号，群聊为群号
   senderId: string  // 消息发送者 QQ 号
   text: string
+  imageUrls: string[]
 }
 
 export interface OutboundContext {
@@ -23,6 +24,13 @@ function extractText(segments: MessageSegment[], botId: string): string {
     .trimStart()
 }
 
+function extractImageUrls(segments: MessageSegment[]): string[] {
+  return segments
+    .filter(s => s.type === 'image')
+    .map(s => (s.data as { url: string }).url)
+    .filter(Boolean)
+}
+
 export function toOpenClaw(event: OneBotEvent, botId: string): InboundMessage | null {
   if (event.post_type !== 'message') return null
 
@@ -35,6 +43,7 @@ export function toOpenClaw(event: OneBotEvent, botId: string): InboundMessage | 
       peerId: String(e.user_id),
       senderId: String(e.user_id),
       text: extractText(e.message, botId),
+      imageUrls: extractImageUrls(e.message),
     }
   }
 
@@ -49,6 +58,7 @@ export function toOpenClaw(event: OneBotEvent, botId: string): InboundMessage | 
       peerId: String(e.group_id),
       senderId: String(e.user_id),
       text: extractText(e.message, botId),
+      imageUrls: extractImageUrls(e.message),
     }
   }
 
